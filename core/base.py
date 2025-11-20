@@ -6,8 +6,11 @@ Date: 2025-11-20
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import List, Set, Dict, Optional, Tuple, Any
+from typing import Set, Dict, Optional, Any
 from dataclasses import dataclass, field
+
+from core.model import Model
+from core.solver_interface import SolverInterface
 
 
 class ConstraintType(Enum):
@@ -84,47 +87,6 @@ class Objective:
 
 
 @dataclass
-class Model:
-    """Represents an optimization model"""
-    name: str = "model"
-    variables: Dict[str, Variable] = field(default_factory=dict)
-    constraints: Dict[str, Constraint] = field(default_factory=dict)
-    objective: Optional[Objective] = None
-    
-    def add_variable(self, variable: Variable):
-        """Add a variable to the model"""
-        self.variables[variable.name] = variable
-    
-    def add_constraint(self, constraint: Constraint):
-        """Add a constraint to the model"""
-        self.constraints[constraint.name] = constraint
-    
-    def remove_constraint(self, constraint_name: str):
-        """Remove a constraint from the model"""
-        if constraint_name in self.constraints:
-            del self.constraints[constraint_name]
-    
-    def get_active_constraints(self) -> List[Constraint]:
-        """Get all active constraints"""
-        return [c for c in self.constraints.values() if c.is_active]
-    
-    def deactivate_constraint(self, constraint_name: str):
-        """Temporarily deactivate a constraint"""
-        if constraint_name in self.constraints:
-            self.constraints[constraint_name].is_active = False
-    
-    def activate_constraint(self, constraint_name: str):
-        """Reactivate a constraint"""
-        if constraint_name in self.constraints:
-            self.constraints[constraint_name].is_active = True
-    
-    def copy(self) -> 'Model':
-        """Create a deep copy of the model"""
-        import copy
-        return copy.deepcopy(self)
-
-
-@dataclass
 class IISResult:
     """Result from IIS finding algorithm"""
     iis_constraints: Set[str]  # Names of constraints in the IIS
@@ -142,65 +104,6 @@ class IISResult:
                 f"  Time: {self.time_elapsed:.3f}s\n"
                 f"  Iterations: {self.iterations}\n"
                 f"  Constraints in IIS: {sorted(self.iis_constraints)}")
-
-
-class SolverInterface(ABC):
-    """Abstract interface for optimization solvers"""
-    
-    @abstractmethod
-    def load_model(self, model: Model):
-        """Load a model into the solver"""
-        pass
-    
-    @abstractmethod
-    def solve(self) -> SolutionStatus:
-        """Solve the current model"""
-        pass
-    
-    @abstractmethod
-    def get_solution(self) -> Optional[Dict[str, float]]:
-        """Get the solution values for variables"""
-        pass
-    
-    @abstractmethod
-    def get_objective_value(self) -> Optional[float]:
-        """Get the objective function value"""
-        pass
-    
-    @abstractmethod
-    def get_dual_values(self) -> Optional[Dict[str, float]]:
-        """Get dual values (shadow prices) for constraints"""
-        pass
-    
-    @abstractmethod
-    def add_constraint(self, constraint: Constraint):
-        """Add a constraint to the current model"""
-        pass
-    
-    @abstractmethod
-    def remove_constraint(self, constraint_name: str):
-        """Remove a constraint from the current model"""
-        pass
-    
-    @abstractmethod
-    def set_constraint_active(self, constraint_name: str, active: bool):
-        """Activate or deactivate a constraint"""
-        pass
-    
-    @abstractmethod
-    def reset(self):
-        """Reset the solver state"""
-        pass
-    
-    @abstractmethod
-    def set_time_limit(self, seconds: float):
-        """Set solver time limit"""
-        pass
-    
-    @abstractmethod
-    def set_verbose(self, verbose: bool):
-        """Set solver verbosity"""
-        pass
 
 
 class IISAlgorithm(ABC):
