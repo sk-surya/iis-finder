@@ -4,7 +4,7 @@ HiGHS Solver Interface Implementation
 
 import highspy
 import numpy as np
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, override
 from collections import defaultdict
 from core.solver_interface import SolverInterface
 from core.base import (
@@ -25,6 +25,7 @@ class HighsSolver(SolverInterface):
 		self.dual_values: Optional[Dict[str, float]] = None
 		self.verbose = False
 
+	@override
 	def reset(self):
 		"""Reset the solver state"""
 		self.highs.clear()
@@ -35,6 +36,7 @@ class HighsSolver(SolverInterface):
 		self.solution = None
 		self.dual_values = None
 
+	@override
 	def load_model(self, model: Model):
 		"""Load a model into HiGHS solver"""
 		self.reset()
@@ -105,7 +107,6 @@ class HighsSolver(SolverInterface):
 						row_indices[var_idx].append(idx)
 						values[var_idx].append(coeff)
 						col_indices.append(self.var_indices[var_name])
-						values.append(coeff)
 
 		# Add variables
 		# self.highs.addVars(
@@ -114,16 +115,209 @@ class HighsSolver(SolverInterface):
 		# 	upper_bounds=upper_bounds,
 		# )
 
+		values_list_ordered_by_var = []
+		row_indices_list_ordered_by_var = []
+		counts = []
+		for var_idx in self.var_indices.values():
+			values_list_ordered_by_var.extend(values[var_idx])
+			row_indices_list_ordered_by_var.extend(row_indices[var_idx])
+			counts.append(len(values[var_idx]))
+		starts = [0] + np.cumsum(counts[:-1]).tolist() + [len(values_list_ordered_by_var)]
+
+		# example for self to understand and verify
+		# m = np.array([
+			# 	[0, 0, 1],
+			# 	[4, 0, 0],
+			# 	[0, 0, 3]
+			# ])
+		# values_list = [4, 1, 3]
+		# row_indices_list = [1, 0, 2]
+		# counts = [1, 0, 2]
+		# starts = [0, 1, 1, 3]		# I dont think highs needs the last element like scipy.sparse.csc_matrix does but doesnt hurt too ig
+		# logic to get starts
+		# start with [0]
+		# cumulative sum of counts[:-1] gives [1, 1]
+
+		# I think it add constraints too as we are passing A matrix here
 		self.highs.addCols(
 			num_cols=num_vars,
 			costs=obj_coeffs,
 			lower_bounds=lower_bounds,
 			upper_bounds=upper_bounds,
-			num_elements=len(values),
-			starts=0,
-			indices=None,
-			values=None,
+			num_elements=len(values_list_ordered_by_var),
+			starts=starts,
+			indices=row_indices_list_ordered_by_var,
+			values=values_list_ordered_by_var,
 		)
+
+		# Add integrality of vars
+		self.highs.changeColsIntegrality(
+			num_cols=num_vars,
+			cols=list(range(num_vars)),
+			var_types=integrality
+		)
+
+		# Set objective sense
+		if model.objective and not model.objective.is_minimize:
+			self.highs.changeObjectiveSense(highspy.ObjSense.kMaximize)
+
+	@override
+	def solve(self) -> SolutionStatus:
+		"""Solve the loaded model"""
+		self.highs.run()
+		status = self.highs.getModelStatus()
+		
+		# Map HiGHS status to SolutionStatus
+		if status == highspy.HighsModelStatus.kOptimal:
+			self._extract_solution()
+			return SolutionStatus.OPTIMAL
+		elif status == highspy.HighsModelStatus.kInfeasible:
+			return SolutionStatus.INFEASIBLE
+		elif status == highspy.HighsModelStatus.kUnbounded:
+			return SolutionStatus.UNBOUNDED
+		elif status == highspy.HighsModelStatus.kTimeLimit:
+			return SolutionStatus.TIME_LIMIT
+		else:
+			return SolutionStatus.UNKNOWN
+	
+	def _extract_solution(self):
+		"""Extract solution and dual values from HiGHS"""
+		solution = self.highs.getSolution()
+		col_values = list(solution.col_value)
+		dual_values = list(solution.row_dual)
+
+		# Extract variable values
+		self.solution = {}
+		for var_name, idx in self.var_indices.items():
+			self.solution[var_name] = col_values[idx]
+		
+		# Extract dual values for constraints
+		self.dual_values = {}
+		assert self.model is not None, "Model must be loaded before extracting solution"
+		active_constraints = self.model.get_active_constraints()
+		for constraint in active_constraints:
+			idx = self.constraint_indices[constraint.name]
+			self.dual_values[constraint.name] = dual_values[idx]
+
+	@override
+	def get_solution(self) -> Optional[Dict[str, float]]:
+		"""Get the solution values for variables"""
+		return self.solution
+
+	@override
+	def get_objective_value(self) -> Optional[float]:
+		"""Get the objective function value"""
+		info = self.highs.getInfo()
+		return info.objective_function_value if info else None
+	
+	@override
+	def get_dual_values(self) -> Optional[Dict[str, float]]:
+		"""Get dual values (shadow prices) for constraints"""
+		return self.dual_values
+	
+	@override
+	def add_constraint(self, constraint: Constraint):
+		"""Add a constraint to the current model"""
+		if self.model is None:
+			raise ValueError("Model must be loaded before adding constraints")
+		self.model.add_constraint(constraint)
+		self.load_model(self.model)			  # TODO: This is inefficient, later lets support incremental updates
+
+	@override
+	def remove_constraint(self, constraint_name: str):
+		"""Remove a constraint from the current model"""
+		if self.model is None:
+			raise ValueError("Model must be loaded before removing constraints")
+		self.model.remove_constraint(constraint_name)
+		self.load_model(self.model)			  # TODO: This is inefficient, later lets support incremental updates
+	
+	@override
+	def set_constraint_active(self, constraint_name: str, active: bool):
+		"""Activate or deactivate a constraint"""
+		if self.model is None:
+			raise ValueError("Model must be loaded before modifying constraints")
+		if active:
+			self.model.activate_constraint(constraint_name)
+		else:
+			self.model.deactivate_constraint(constraint_name)
+		self.load_model(self.model)			  # TODO: This is inefficient, later lets support incremental updates
+
+	@override
+	def set_time_limit(self, seconds: float):
+		"""Set solver time limit"""
+		self.highs.setOptionValue("time_limit", seconds)
+
+	@override
+	def set_verbose(self, verbose: bool):
+		self.verbose = verbose
+		self.highs.setOptionValue("output_flag", str(self.verbose).lower())
+
+	def load_from_file(self, filename: str):
+		"""Load a model from a file (MPS or LP format)"""
+		self.reset()
+		self.highs.readModel(filename)
+
+		# Extract model structure and create Model object
+		lp = self.highs.getLp()
+		model = Model(name=filename.split('/')[-1].split('.')[0])
+
+		# Create variables
+		for i in range(lp.num_col_):
+			var_type = VariableType.CONTINUOUS
+			if hasattr(lp, 'integrality_') and lp.integrality_:
+				if lp.integrality_[i] == highspy.HighsVarType.kInteger:
+					var_type = VariableType.INTEGER
+					if lp.col_lower_[i] == 0.0 and lp.col_upper_[i] == 1.0:
+						var_type = VariableType.BINARY
+			var = Variable(
+				name=f"x{i}",
+				var_type=var_type,
+				lower_bound=lp.col_lower_[i],
+				upper_bound=lp.col_upper_[i],
+				index=i
+			)
+			model.add_variable(var)
+
+		# Create constraints
+	
+		if lp.a_matrix_.format_ == highspy.MatrixFormat.kColwise:
+			starts = list(lp.a_matrix_.start_)
+			coeffs = list(lp.a_matrix_.value_)
+			indices = list(lp.a_matrix_.index_)
+
+			for col_idx in range(lp.num_col_):
+				col_slice = slice(starts[col_idx], starts[col_idx + 1])
+				col_coeffs = coeffs[col_slice]
+				col_coeff_row_indices = indices[col_slice]
+				for i, row_idx in enumerate(col_coeff_row_indices):
+					constraint_name = f"c{row_idx}"
+					if constraint_name not in model.constraints:
+						# Determine constraint type and rhs
+						if lp.row_lower_[row_idx] == lp.row_upper_[row_idx]:
+							constraint_type = ConstraintType.EQ
+							rhs = lp.row_upper_[row_idx]
+						elif lp.row_lower_[row_idx] > -highspy.kHighsInf:
+							constraint_type = ConstraintType.GEQ
+							rhs = lp.row_lower_[row_idx]
+						else:
+							constraint_type = ConstraintType.LEQ
+							rhs = lp.row_upper_[row_idx]
+						
+						constraint = Constraint(
+							name=constraint_name,
+							coefficients={},
+							constraint_type=constraint_type,
+							rhs=rhs,
+							index=row_idx
+						)
+						model.add_constraint(constraint)
+					
+					var_name = f"x{col_idx}"
+					model.constraints[constraint_name].coefficients[var_name] = col_coeffs[i]
+		
+		# TODO as test: check if highs model loaded from this model is same as self.highs model
+		return model
+
 
 
 		
