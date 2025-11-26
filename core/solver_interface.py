@@ -63,3 +63,23 @@ class SolverInterface(ABC):
     def set_verbose(self, verbose: bool):
         """Set solver verbosity"""
         pass
+
+    @abstractmethod
+    def sync_model(self, model: Model):
+        """
+        Sync model changes incrementally if possible.
+        Falls back to full load_model() if incremental not possible.
+
+        This is the preferred method for updating an already-loaded model.
+        """
+        pass
+
+    @abstractmethod
+    def supports_incremental_updates(self) -> bool:
+        """
+        Check whether this solver supports incremental constraint updates.
+
+        Returns:
+            True if solver can apply incremental updates, False otherwise
+        """
+        pass

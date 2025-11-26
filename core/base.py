@@ -37,6 +37,16 @@ class SolutionStatus(Enum):
     ERROR = "error"
 
 
+class ChangeType(Enum):
+    """Types of changes that can occur to a model"""
+    CONSTRAINT_ADDED = "constraint_added"
+    CONSTRAINT_REMOVED = "constraint_removed"
+    CONSTRAINT_ACTIVATED = "constraint_activated"
+    CONSTRAINT_DEACTIVATED = "constraint_deactivated"
+    VARIABLE_ADDED = "variable_added"
+    OBJECTIVE_CHANGED = "objective_changed"
+
+
 @dataclass
 class Variable:
     """Represents a decision variable"""
@@ -84,6 +94,14 @@ class Objective:
     coefficients: Dict[str, float]  # variable_name -> coefficient
     is_minimize: bool = True
     constant: float = 0.0
+
+
+@dataclass
+class ModelChange:
+    """Represents a single change to the model"""
+    change_type: ChangeType
+    entity_name: str  # Name of variable/constraint affected
+    entity: Optional[Any] = None  # The actual object (for adds)
 
 
 @dataclass
