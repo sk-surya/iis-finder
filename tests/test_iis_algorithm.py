@@ -60,6 +60,7 @@ class TestIISAlgorithm:
 
         # Both constraints form a valid IIS
         iis_constraints = {"c1", "c2"}
+        # iis_constraints = algorithm.find_iis(model).iis_constraints
         is_valid = algorithm.verify_iis(model, iis_constraints)
 
         assert is_valid is True
