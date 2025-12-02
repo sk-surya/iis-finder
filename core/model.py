@@ -73,13 +73,14 @@ class Model:
     def activate_constraint(self, constraint_name: str):
         """Reactivate a constraint and track the change"""
         from core.base import ModelChange, ChangeType
-        if constraint_name in self.constraints:
-            self.constraints[constraint_name].is_active = True
-            self._changes.append(ModelChange(
-                change_type=ChangeType.CONSTRAINT_ACTIVATED,
-                entity_name=constraint_name
-            ))
-            self._version += 1
+        if constraint_name not in self.constraints:
+             raise ValueError(f"Constraint '{constraint_name}' does not exist in the model.")
+        self.constraints[constraint_name].is_active = True
+        self._changes.append(ModelChange(
+            change_type=ChangeType.CONSTRAINT_ACTIVATED,
+            entity_name=constraint_name
+        ))
+        self._version += 1
 
     def get_changes_since(self, version: int) -> List['ModelChange']:
         """Get all changes since a specific version"""
