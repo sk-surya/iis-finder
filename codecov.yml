@@ -1,3 +1,9 @@
 # need this file (even if empty) for GitHub to generate coverage reports during Pull Requests
+
+coverage:
+  precision: 2
+  round: down
+  range: "70...100"
+
 ignore:
-  - "*/tests/*”
+  - "*/tests/*"
