@@ -2,12 +2,13 @@
 Tests for file I/O functionality
 """
 
+import highspy
 import pytest
 import tempfile
 import os
 from core.base import VariableType, ConstraintType, SolutionStatus
 from solvers.highs import HighsSolver
-from tests.conftest import assert_objective_close, assert_solution_close
+from tests.conftest import assert_objective_close, assert_solution_close, convert_highs_status
 
 
 class TestFileIO:
@@ -35,7 +36,7 @@ End
         try:
             solver = HighsSolver()
             model = solver.load_from_file(filename)
-
+            
             # Check model was loaded
             assert model is not None
             assert model.name is not None
@@ -46,7 +47,7 @@ End
             # Check constraints were created
             assert len(model.constraints) > 0
             
-			# Check if objective was created
+            # Check if objective was created
             assert model.objective is not None
 
             # Try solving the loaded model
@@ -55,6 +56,14 @@ End
             assert status == SolutionStatus.OPTIMAL
             assert_objective_close(solver, 10.0)
             assert_solution_close(solver,  {"x": 10.0, "y": 0.0})
+            
+            direct_highs = highspy.Highs()
+            direct_highs.readModel(filename)
+            direct_highs.solve()
+            direct_status = direct_highs.getModelStatus()
+            assert convert_highs_status(direct_status) == status
+            assert direct_highs.getObjectiveValue() == pytest.approx(solver.get_objective_value(), rel=1e-6)
+            assert list(direct_highs.getSolution().col_value) == list(solver.get_solution().values())
 
         finally:
             os.unlink(filename)
@@ -104,6 +113,14 @@ ENDATA
             status = solver.solve()
             assert status in [SolutionStatus.OPTIMAL, SolutionStatus.INFEASIBLE]
 
+            direct_highs = highspy.Highs()
+            direct_highs.readModel(filename)
+            direct_highs.solve()
+            direct_status = direct_highs.getModelStatus()
+            assert convert_highs_status(direct_status) == status
+            assert direct_highs.getObjectiveValue() == pytest.approx(solver.get_objective_value(), rel=1e-6)
+            assert list(direct_highs.getSolution().col_value) == list(solver.get_solution().values())
+
         finally:
             os.unlink(filename)
 
@@ -132,6 +149,12 @@ End
 
             # Should be infeasible
             assert status == SolutionStatus.INFEASIBLE
+            
+            direct_highs = highspy.Highs()
+            direct_highs.readModel(filename)
+            direct_highs.solve()
+            direct_status = direct_highs.getModelStatus()
+            assert convert_highs_status(direct_status) == status
 
         finally:
             os.unlink(filename)
@@ -168,6 +191,14 @@ End
             # All values should be 0 or 1 (binary)
             for val in solution.values():
                 assert val in [0.0, 1.0] or abs(val - round(val)) < 1e-6
+
+            direct_highs = highspy.Highs()
+            direct_highs.readModel(filename)
+            direct_highs.solve()
+            direct_status = direct_highs.getModelStatus()
+            assert convert_highs_status(direct_status) == status
+            assert direct_highs.getObjectiveValue() == pytest.approx(solver.get_objective_value(), rel=1e-6)
+            assert list(direct_highs.getSolution().col_value) == list(solver.get_solution().values())
 
         finally:
             os.unlink(filename)
@@ -207,6 +238,14 @@ End
             # All values should be integers
             for val in solution.values():
                 assert abs(val - round(val)) < 1e-6
+            
+            direct_highs = highspy.Highs()
+            direct_highs.readModel(filename)
+            direct_highs.solve()
+            direct_status = direct_highs.getModelStatus()
+            assert convert_highs_status(direct_status) == status
+            assert direct_highs.getObjectiveValue() == pytest.approx(solver.get_objective_value(), rel=1e-6)
+            assert list(direct_highs.getSolution().col_value) == list(solver.get_solution().values())
 
         finally:
             os.unlink(filename)
@@ -246,10 +285,18 @@ End
 
             solution = solver.get_solution()
             
-			# x, y should be integers
+            # x, y should be integers
             for var, val in solution.items():
                 if var in ['x', 'y']:
-                	assert abs(val - round(val)) < 1e-6
+                    assert abs(val - round(val)) < 1e-6
+
+            direct_highs = highspy.Highs()
+            direct_highs.readModel(filename)
+            direct_highs.solve()
+            direct_status = direct_highs.getModelStatus()
+            assert convert_highs_status(direct_status) == status
+            assert direct_highs.getObjectiveValue() == pytest.approx(solver.get_objective_value(), rel=1e-6)
+            assert list(direct_highs.getSolution().col_value) == list(solver.get_solution().values())
 
         finally:
             os.unlink(filename)

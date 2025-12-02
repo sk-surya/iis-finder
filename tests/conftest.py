@@ -2,9 +2,10 @@
 Pytest configuration and fixtures for IIS-Finder tests
 """
 
+from highspy import HighsModelStatus
 import pytest
 from core.model import Model
-from core.base import Variable, Constraint, Objective, VariableType, ConstraintType
+from core.base import SolutionStatus, Variable, Constraint, Objective, VariableType, ConstraintType
 from solvers.highs import HighsSolver
 
 
@@ -160,6 +161,19 @@ def assert_objective_close(solver, expected_obj, tolerance=1e-6):
     assert actual_obj is not None, "Objective value is None"
     assert abs(actual_obj - expected_obj) < tolerance, \
         f"Objective: expected {expected_obj}, got {actual_obj}"
+
+
+def convert_highs_status(status: HighsModelStatus):		# pragma: no cover
+    if status == HighsModelStatus.kOptimal:
+        return SolutionStatus.OPTIMAL
+    elif status == HighsModelStatus.kInfeasible:
+        return SolutionStatus.INFEASIBLE
+    elif status == HighsModelStatus.kUnbounded:
+        return SolutionStatus.UNBOUNDED
+    elif status == HighsModelStatus.kTimeLimit:
+        return SolutionStatus.TIME_LIMIT
+    else:
+        return SolutionStatus.UNKNOWN
 
 
 # Make helpers available for import
