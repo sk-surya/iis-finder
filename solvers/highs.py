@@ -7,8 +7,9 @@ import numpy as np
 from typing import Dict, Optional, List, override
 from collections import defaultdict
 from core.solver_interface import SolverInterface
+from core.model import Model
 from core.base import (
-	Model, ModelChange, Variable, Constraint, 
+	ModelChange, Variable, Constraint,
 	SolutionStatus, ConstraintType, VariableType
 )
 
@@ -45,8 +46,8 @@ class HighsSolver(SolverInterface):
 		self.model = model
 
 		# Configure solver options
-		self.highs.setOptionValue("output_flag", str(self.verbose).lower())
-		self.highs.setOptionValue("presolve", "off")
+		# self.highs.setOptionValue("output_flag", str(self.verbose).lower())
+		# self.highs.setOptionValue("presolve", "off")
 
 		# Create variable index mapping
 		var_list = sorted(model.variables.keys())
@@ -82,11 +83,13 @@ class HighsSolver(SolverInterface):
 		active_constraints = model.get_active_constraints()
 		self.constraint_indices = {constraint.name: idx for idx, constraint in enumerate(active_constraints)}
 		
+		counts = []
 		if active_constraints:
 			# Build constraint in CSC format
-			row_indices: Dict[int, List[int]] = defaultdict(list)		# list of row indices for each column for nz CSC format
+			# row_indices: Dict[int, List[int]] = defaultdict(list)		# list of row indices for each column for nz CSC format
 			col_indices = []
-			values: Dict[int, List[float]] = defaultdict(list)
+			# values: Dict[int, List[float]] = defaultdict(list)
+			values: List[float] = []
 			lhs = []
 			rhs = []
 
@@ -106,9 +109,11 @@ class HighsSolver(SolverInterface):
 				for var_name, coeff in constraint.coefficients.items():
 					if var_name in self.var_indices and coeff != 0:
 						var_idx = self.var_indices[var_name]
-						row_indices[var_idx].append(idx)
-						values[var_idx].append(coeff)
-						col_indices.append(self.var_indices[var_name])
+						# row_indices[var_idx].append(idx)
+						# values[var_idx].append(coeff)
+						values.append(coeff)
+						col_indices.append(var_idx)
+				counts.append(len(constraint.coefficients))
 
 		# Add variables
 		# self.highs.addVars(
@@ -117,46 +122,65 @@ class HighsSolver(SolverInterface):
 		# 	upper_bounds=upper_bounds,
 		# )
 
-		values_list_ordered_by_var = []
-		row_indices_list_ordered_by_var = []
-		counts = []
-		for var_idx in self.var_indices.values():
-			values_list_ordered_by_var.extend(values[var_idx])
-			row_indices_list_ordered_by_var.extend(row_indices[var_idx])
-			counts.append(len(values[var_idx]))
-		starts = [0] + np.cumsum(counts[:-1]).tolist() + [len(values_list_ordered_by_var)]
+		# values_list_ordered_by_var = []
+		# row_indices_list_ordered_by_var = []
+		# counts = []
+		# for var_idx in self.var_indices.values():
+		# 	values_list_ordered_by_var.extend(values[var_idx])
+		# 	row_indices_list_ordered_by_var.extend(row_indices[var_idx])
+		# 	counts.append(len(values[var_idx]))
+		
+		# Build starts array for CSC format (length = num_vars, not num_vars + 1)
+		if counts:
+			starts = [0] + np.cumsum(counts[:-1]).tolist()
+		else:
+			starts = [0] * num_vars
 
-		# example for self to understand and verify
-		# m = np.array([
-			# 	[0, 0, 1],
-			# 	[4, 0, 0],
-			# 	[0, 0, 3]
-			# ])
-		# values_list = [4, 1, 3]
-		# row_indices_list = [1, 0, 2]
-		# counts = [1, 0, 2]
-		# starts = [0, 1, 1, 3]		# I dont think highs needs the last element like scipy.sparse.csc_matrix does but doesnt hurt too ig
-		# logic to get starts
-		# start with [0]
-		# cumulative sum of counts[:-1] gives [1, 1]
-
-		# I think it add constraints too as we are passing A matrix here
-		self.highs.addCols(
-			num_cols=num_vars,
-			costs=obj_coeffs,
-			lower_bounds=lower_bounds,
-			upper_bounds=upper_bounds,
-			num_elements=len(values_list_ordered_by_var),
-			starts=starts,
-			indices=row_indices_list_ordered_by_var,
-			values=values_list_ordered_by_var,
+		# addCols expects positional arguments, not keyword arguments
+		# Args: num_cols, costs, lower, upper, num_nz, starts (int32), indices (int32), values (float64)
+		# status = self.highs.addCols(
+		# 	num_vars,
+		# 	obj_coeffs,
+		# 	np.array(lower_bounds),
+		# 	np.array(upper_bounds),
+		# 	len(values_list_ordered_by_var),
+		# 	np.array(starts, dtype=np.int32),
+		# 	np.array(row_indices_list_ordered_by_var, dtype=np.int32),
+		# 	np.array(values_list_ordered_by_var, dtype=np.float64),
+		# )
+		
+		# inf = highspy.kHighsInf
+		# The constraint matrix is defined with the rows below, but parameters
+		# for an empty (column-wise) matrix must be passed
+		status = self.highs.addCols(
+			num_vars,
+			obj_coeffs,
+			np.array(lower_bounds),
+			np.array(upper_bounds),
+			0,
+			0,
+			0,
+			0
 		)
+
+		assert status == highspy.HighsStatus.kOk, "Error adding variables to HiGHS model"
+		# Add the rows, with the constraint matrix row-wise
+		if active_constraints:
+			status = self.highs.addRows(
+				len(active_constraints),
+				np.array(lhs),
+				np.array(rhs),
+				len(values),
+				np.array(starts, dtype=np.int32),
+				np.array(col_indices, dtype=np.int32),
+				np.array(values, dtype=np.float64)
+			)
 
 		# Add integrality of vars
 		self.highs.changeColsIntegrality(
-			num_cols=num_vars,
-			cols=list(range(num_vars)),
-			var_types=integrality
+			num_vars,
+			np.arange(num_vars, dtype=np.int32),
+			np.array(integrality, dtype=np.uint8)
 		)
 
 		# Set objective sense
@@ -383,15 +407,15 @@ class HighsSolver(SolverInterface):
 				values.append(coeff)
 
 		# Add row to HiGHS
-		num_new_rows = 1
+		# addRows args: num_rows, lower, upper, num_nz, starts (int32), indices (int32), values (float64)
 		self.highs.addRows(
-			num_new_rows=num_new_rows,
-			lower_bounds=[lhs],
-			upper_bounds=[rhs],
-			num_new_nz=len(values),
-			starts=[0, len(values)],
-			indices=indices,
-			values=values
+			1,
+			np.array([lhs]),
+			np.array([rhs]),
+			len(values),
+			np.array([0], dtype=np.int32),
+			np.array(indices, dtype=np.int32),
+			np.array(values, dtype=np.float64)
 		)
 
 		# Update constraint index mapping
@@ -411,9 +435,10 @@ class HighsSolver(SolverInterface):
 		row_idx = self.constraint_indices[constraint_name]
 
 		# Delete row from HiGHS
+		# deleteRows args: num_rows, rows (int32 array)
 		self.highs.deleteRows(
-			num_set_entries=1,
-			row_set=[row_idx]
+			1,
+			np.array([row_idx], dtype=np.int32)
 		)
 
 		# Update index mapping - all constraints after this shift down

@@ -6,11 +6,12 @@ Date: 2025-11-20
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Set, Dict, Optional, Any
+from typing import Set, Dict, Optional, Any, TYPE_CHECKING
 from dataclasses import dataclass, field
 
-from core.model import Model
-from core.solver_interface import SolverInterface
+if TYPE_CHECKING:
+    from core.model import Model
+    from core.solver_interface import SolverInterface
 
 
 class ConstraintType(Enum):
@@ -126,23 +127,24 @@ class IISResult:
 
 class IISAlgorithm(ABC):
     """Abstract base class for IIS finding algorithms"""
-    
-    def __init__(self, solver: SolverInterface):
+
+    def __init__(self, solver: 'SolverInterface'):
         self.solver = solver
-        self.model: Optional[Model] = None
-        
+        self.model: Optional['Model'] = None
+
     @abstractmethod
-    def find_iis(self, model: Model) -> IISResult:
+    def find_iis(self, model: 'Model') -> IISResult:
         """Find an IIS in the given model"""
         pass
-    
-    def verify_iis(self, model: Model, iis_constraints: Set[str]) -> bool:
+
+    def verify_iis(self, model: 'Model', iis_constraints: Set[str]) -> bool:
         """
         Verify that a set of constraints forms an IIS
-        
+
         Returns:
             True if the constraints form a valid IIS
         """
+        from core.model import Model
         # Create a model with only IIS constraints
         iis_model = Model(name=f"{model.name}_iis_verification")
         iis_model.variables = model.variables.copy()
