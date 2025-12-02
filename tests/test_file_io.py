@@ -178,7 +178,7 @@ End
 Minimize
  obj: x + y
 Subject To
- c1: 2 x + 3 y >= 10
+ c1: 2 x + 3 y >= 10.5
 Bounds
  0 <= x <= 10
  0 <= y <= 10
@@ -207,6 +207,49 @@ End
             # All values should be integers
             for val in solution.values():
                 assert abs(val - round(val)) < 1e-6
+
+        finally:
+            os.unlink(filename)
+
+    def test_load_milp_from_file(self):
+        """Test loading a model with integer and continuous variables"""
+        lp_content = """
+Minimize
+ obj: x + y + z
+Subject To
+ c1: 2 x + 3 y >= 10.5
+ c2: z = 4.1
+Bounds
+ 0 <= x <= 10
+ 0 <= y <= 10
+ 0 <= z <= 10
+General
+ x
+ y
+End
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.lp', delete=False) as f:
+            f.write(lp_content)
+            filename = f.name
+
+        try:
+            solver = HighsSolver()
+            model = solver.load_from_file(filename)
+
+            # Check variables were loaded
+            assert len(model.variables) >= 2
+
+            # Solve the model
+            solver.load_model(model)
+            status = solver.solve()
+            assert status == SolutionStatus.OPTIMAL
+
+            solution = solver.get_solution()
+            
+			# x, y should be integers
+            for var, val in solution.items():
+                if var in ['x', 'y']:
+                	assert abs(val - round(val)) < 1e-6
 
         finally:
             os.unlink(filename)
