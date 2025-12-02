@@ -10,7 +10,7 @@ from collections import defaultdict
 from core.solver_interface import SolverInterface
 from core.model import Model
 from core.base import (
-	ModelChange, Variable, Constraint,
+	ModelChange, Objective, Variable, Constraint,
 	SolutionStatus, ConstraintType, VariableType
 )
 from utils.exceptions import ProgrammingError
@@ -355,6 +355,8 @@ class HighsSolver(SolverInterface):
 			self._activate_constraint_incremental(change.entity_name)
 		elif change.change_type == ChangeType.CONSTRAINT_DEACTIVATED:
 			self._deactivate_constraint_incremental(change.entity_name)
+		else:	# pragma: no cover
+			raise NotImplementedError(f"Unsupported change type: {change.change_type}. This branch is expected to be unreachable.")
 
 	def _deactivate_constraint_incremental(self, constraint_name: str):
 		"""Deactivate a constraint by relaxing bounds to (-inf, inf)"""
@@ -371,32 +373,24 @@ class HighsSolver(SolverInterface):
 
 	def _activate_constraint_incremental(self, constraint_name: str):
 		"""Reactivate a deactivated constraint by restoring original bounds"""
-		if self.model is None:
-			raise ValueError("Model must be loaded before activating constraints")
-
+		# Constraint exists, just restore bounds
 		constraint = self.model.constraints[constraint_name]
+		row_idx = self.constraint_indices[constraint_name]
+		if constraint.constraint_type == ConstraintType.LEQ:
+			lhs = -highspy.kHighsInf
+			rhs = constraint.rhs
+		elif constraint.constraint_type == ConstraintType.GEQ:
+			lhs = constraint.rhs
+			rhs = highspy.kHighsInf
+		else:  # EQ
+			lhs = constraint.rhs
+			rhs = constraint.rhs
 
-		if constraint_name not in self.constraint_indices:
-			# Constraint was fully removed, need to add it back
-			self._add_constraint_incremental(constraint)
-		else:
-			# Constraint exists, just restore bounds
-			row_idx = self.constraint_indices[constraint_name]
-			if constraint.constraint_type == ConstraintType.LEQ:
-				lhs = -highspy.kHighsInf
-				rhs = constraint.rhs
-			elif constraint.constraint_type == ConstraintType.GEQ:
-				lhs = constraint.rhs
-				rhs = highspy.kHighsInf
-			else:  # EQ
-				lhs = constraint.rhs
-				rhs = constraint.rhs
+		self.highs.changeRowBounds(row_idx, lhs, rhs)
 
-			self.highs.changeRowBounds(row_idx, lhs, rhs)
-
-			# Clear cached solution/duals as they may be invalid
-			self.solution = None
-			self.dual_values = None
+		# Clear cached solution/duals as they may be invalid
+		self.solution = None
+		self.dual_values = None
 
 	def _add_constraint_incremental(self, constraint: Constraint):
 		"""Add a single constraint using HiGHS addRows API"""
@@ -415,7 +409,7 @@ class HighsSolver(SolverInterface):
 		indices = []
 		values = []
 		for var_name, coeff in constraint.coefficients.items():
-			if var_name in self.var_indices and coeff != 0:
+			if coeff != 0:
 				indices.append(self.var_indices[var_name])
 				values.append(coeff)
 
