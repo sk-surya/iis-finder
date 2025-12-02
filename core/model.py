@@ -103,5 +103,5 @@ class Model:
         import copy
         model_copy = copy.deepcopy(self)
         # Clear change log on copy - treat as fresh model
-        # model_copy._changes.clear()
+        model_copy._changes.clear()
         return model_copy
