@@ -144,8 +144,9 @@ def standard_lp_model():
 
 # Helper functions that can be used across tests
 
-def assert_solution_close(solution, expected, tolerance=1e-6):
+def assert_solution_close(solver, expected, tolerance=1e-6):
     """Helper to assert solution values are close to expected"""
+    solution = solver.get_solution()
     for var_name, expected_val in expected.items():
         assert var_name in solution, f"Variable {var_name} not in solution"
         actual_val = solution[var_name]

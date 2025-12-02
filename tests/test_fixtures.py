@@ -270,7 +270,7 @@ class TestHelperFunctions:
         # Test the helper function works
         # Can't predict exact x and y, but we can test with actual values
         expected = {"x": solution["x"], "y": solution["y"]}
-        assert_solution_close(solution, expected)
+        assert_solution_close(highs_solver, expected)
 
     def test_assert_objective_close(self, feasible_model, highs_solver):
         """Test assert_objective_close helper"""
@@ -296,7 +296,7 @@ class TestHelperFunctions:
 
         # Expected solution: x=3, y=12
         expected = {"x": 3.0, "y": 12.0}
-        assert_solution_close(solution, expected)
+        assert_solution_close(highs_solver, expected)
 
 
 class TestFixtureCombinations:
