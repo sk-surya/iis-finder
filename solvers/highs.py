@@ -486,14 +486,21 @@ class HighsSolver(SolverInterface):
 				else:	# pragma: no cover
 					raise NotImplementedError(f"Unsupported variable integrality type - {lp.integrality_[i]}")
 
+		for i in range(lp.num_col_):
 			var = Variable(
-				name=f"x{i}",
-				var_type=var_type,
+				name=lp.col_names_[i],
+				var_type=var_types[i] if is_mip else VariableType.CONTINUOUS,
 				lower_bound=lp.col_lower_[i],
 				upper_bound=lp.col_upper_[i],
 				index=i
 			)
 			model.add_variable(var)
+
+		# Create objective
+		obj_coeffs = {}
+		for i in range(lp.num_col_):
+			obj_coeffs[lp.col_names_[i]] = lp.col_cost_[i]
+		model.objective = Objective(coefficients=obj_coeffs, is_minimize=lp.sense_ == highspy.ObjSense.kMinimize)
 
 		# Create constraints
 	
@@ -501,14 +508,17 @@ class HighsSolver(SolverInterface):
 			starts = list(lp.a_matrix_.start_)
 			coeffs = list(lp.a_matrix_.value_)
 			indices = list(lp.a_matrix_.index_)
+			row_names = list(lp.row_names_)
 
+			defer_add_constraints: Dict[str, Constraint] = dict()
 			for col_idx in range(lp.num_col_):
 				col_slice = slice(starts[col_idx], starts[col_idx + 1])
 				col_coeffs = coeffs[col_slice]
 				col_coeff_row_indices = indices[col_slice]
 				for i, row_idx in enumerate(col_coeff_row_indices):
-					constraint_name = f"c{row_idx}"
-					if constraint_name not in model.constraints:
+					# constraint_name = f"c{row_idx}"
+					constraint_name = row_names[row_idx]
+					if constraint_name not in defer_add_constraints:
 						# Determine constraint type and rhs
 						if lp.row_lower_[row_idx] == lp.row_upper_[row_idx]:
 							constraint_type = ConstraintType.EQ
@@ -527,10 +537,15 @@ class HighsSolver(SolverInterface):
 							rhs=rhs,
 							index=row_idx
 						)
-						model.add_constraint(constraint)
+						defer_add_constraints.setdefault(constraint_name, constraint)
 					
-					var_name = f"x{col_idx}"
-					model.constraints[constraint_name].coefficients[var_name] = col_coeffs[i]
+					var_name = lp.col_names_[col_idx]
+					defer_add_constraints[constraint_name].coefficients[var_name] = col_coeffs[i]
+			
+			for constraint in defer_add_constraints.values():
+				model.add_constraint(constraint)
+		else:	# pragma: no cover
+			raise NotImplementedError("Only column-wise matrix format is supported")
 		
 		# TODO as test: check if highs model loaded from this model is same as self.highs model
 		return model
