@@ -193,6 +193,9 @@ class HighsSolver(SolverInterface):
 	@override
 	def solve(self) -> SolutionStatus:
 		"""Solve the loaded model"""
+		if self.synced_model_version != self.model.get_version():
+			print(f"Warning - Model (version={self.model.get_version()}) is not synced with solver's model (version={self.synced_model_version}). Auto-syncing now.")
+			self.sync_model(self.model)
 		self.highs.run()
 		status = self.highs.getModelStatus()
 		
