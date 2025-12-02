@@ -6,6 +6,7 @@ import pytest
 from core.model import Model
 from core.base import Variable, Constraint, Objective, VariableType, ConstraintType, SolutionStatus
 from solvers.highs import HighsSolver
+from tests.conftest import assert_objective_close, assert_solution_close
 
 
 class TestHighsSolverBasics:
@@ -80,6 +81,23 @@ class TestHighsSolverBasics:
         status = solver.solve()
 
         assert status == SolutionStatus.INFEASIBLE
+        
+    def test_simple_unbounded_lp(self):
+        """Test solving a simple unbounded LP"""
+        # Model: minimize x
+        #        subject to: x >= 0
+        model = Model(name="simple_unbounded")
+
+        x = Variable(name="x", var_type=VariableType.CONTINUOUS, lower_bound=0.0)
+        model.add_variable(x)
+
+        model.objective = Objective(coefficients={"x": 1.0}, is_minimize=False)
+
+        solver = HighsSolver()
+        solver.load_model(model)
+        status = solver.solve()
+
+        assert status == SolutionStatus.UNBOUNDED
 
     def test_two_variable_lp(self):
         """Test a standard 2-variable LP"""
