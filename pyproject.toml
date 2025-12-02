@@ -13,3 +13,6 @@ dev = [
     "ipykernel>=7.1.0",
     "ipython>=9.7.0",
 ]
+test = [
+    "pytest>=9.0.1",
+]
