@@ -229,3 +229,27 @@ class TestHighsSolverBasics:
         assert solver.var_indices["x"] == 0
         assert solver.var_indices["y"] == 1
         assert solver.var_indices["z"] == 2
+
+    def test_not_passing_names_to_solver(self, standard_lp_model: Model):
+        solver_with_names = HighsSolver()
+        solver_with_names.load_model(standard_lp_model)
+        solver_with_names.solve()
+
+        solver_without_names = HighsSolver()
+        solver_without_names.pass_object_names_to_solver = False
+        solver_without_names.load_model(standard_lp_model.copy())
+        solver_without_names.solve()
+        
+        # both models should have same variable, constraint, objective count
+        assert solver_with_names.var_indices == solver_without_names.var_indices
+        assert solver_with_names.constraint_indices == solver_without_names.constraint_indices
+        assert list(solver_with_names.model.objective.coefficients.values()) == list(solver_without_names.model.objective.coefficients.values())
+        
+        assert solver_with_names.highs.allVariableNames() == list(solver_with_names.var_indices.keys())
+        assert len(solver_without_names.highs.allVariableNames()) == 0
+        
+        assert_solution_close(solver_with_names, solver_without_names.solution)
+        assert_objective_close(solver_with_names, solver_without_names.get_objective_value())
+        assert solver_with_names.get_dual_values() == solver_without_names.get_dual_values()
+        
+        
