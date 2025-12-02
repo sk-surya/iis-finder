@@ -215,10 +215,10 @@ class TestEdgeCases:
         solver = HighsSolver()
         solver.load_model(model)
 
-        # Try to activate a constraint that doesn't exist - should silently do nothing
-        # (activate_constraint checks if constraint_name exists first)
+        # Try to activate a constraint that doesn't exist - should raise
         initial_version = solver.synced_model_version
-        solver.set_constraint_active("nonexistent", True)
+        with pytest.raises(ValueError):
+            solver.set_constraint_active("nonexistent", True)
         # Version should not change since constraint doesn't exist
         assert solver.synced_model_version == initial_version
 
