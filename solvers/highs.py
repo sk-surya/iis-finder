@@ -3,6 +3,7 @@ HiGHS Solver Interface Implementation
 """
 
 import highspy
+from highspy import HighsStatus, HighsModelStatus, kHighsInf
 import numpy as np
 from typing import Dict, Optional, List, override
 from collections import defaultdict
@@ -25,6 +26,7 @@ class HighsSolver(SolverInterface):
 		self.solution: Optional[Dict[str, float]] = None
 		self.dual_values: Optional[Dict[str, float]] = None
 		self.verbose = False
+		self.pass_object_names_to_solver = True
 		self.synced_model_version: int = -1
 
 	@override
@@ -163,6 +165,10 @@ class HighsSolver(SolverInterface):
 			0
 		)
 
+		if self.pass_object_names_to_solver:
+			for var_name, idx in self.var_indices.items():
+				self.highs.passColName(idx, var_name)
+
 		assert status == highspy.HighsStatus.kOk, "Error adding variables to HiGHS model"
 		# Add the rows, with the constraint matrix row-wise
 		if active_constraints:
@@ -175,6 +181,10 @@ class HighsSolver(SolverInterface):
 				np.array(col_indices, dtype=np.int32),
 				np.array(values, dtype=np.float64)
 			)
+
+			if self.pass_object_names_to_solver:
+				for constraint_name, idx in self.constraint_indices.items():
+					self.highs.passRowName(idx, constraint_name)
 
 		# Add integrality of vars
 		self.highs.changeColsIntegrality(
@@ -411,7 +421,7 @@ class HighsSolver(SolverInterface):
 
 		# Add row to HiGHS
 		# addRows args: num_rows, lower, upper, num_nz, starts (int32), indices (int32), values (float64)
-		self.highs.addRows(
+		status = self.highs.addRows(
 			1,
 			np.array([lhs]),
 			np.array([rhs]),
@@ -420,6 +430,12 @@ class HighsSolver(SolverInterface):
 			np.array(indices, dtype=np.int32),
 			np.array(values, dtype=np.float64)
 		)
+
+		assert status == HighsStatus.kOk, "Failed adding constraint to HiGHS Model"
+
+		if self.pass_object_names_to_solver:
+			status = self.highs.passRowName(len(self.constraint_indices), constraint.name)
+			assert status == HighsStatus.kOk, "Failed passing constraint name to HiGHS Model"
 
 		# Update constraint index mapping
 		# New row is added at the end
