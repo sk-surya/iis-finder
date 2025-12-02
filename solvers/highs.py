@@ -13,6 +13,7 @@ from core.base import (
 	ModelChange, Variable, Constraint,
 	SolutionStatus, ConstraintType, VariableType
 )
+from utils.exceptions import ProgrammingError
 
 
 class HighsSolver(SolverInterface):
@@ -219,8 +220,8 @@ class HighsSolver(SolverInterface):
 			return SolutionStatus.UNBOUNDED
 		elif status == highspy.HighsModelStatus.kTimeLimit:
 			return SolutionStatus.TIME_LIMIT
-		else:
-			return SolutionStatus.UNKNOWN
+		else: # pragma: no cover
+			raise RuntimeError(f"Unexpected HiGHS model status: {status}")
 	
 	def _extract_solution(self):
 		"""Extract solution and dual values from HiGHS"""
