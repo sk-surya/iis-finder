@@ -7,6 +7,7 @@ import tempfile
 import os
 from core.base import VariableType, ConstraintType, SolutionStatus
 from solvers.highs import HighsSolver
+from tests.conftest import assert_objective_close, assert_solution_close
 
 
 class TestFileIO:
@@ -21,6 +22,7 @@ Minimize
 Subject To
  c1: x + y >= 5
  c2: 2 x + y >= 8
+ c3: 4x + 5y = 40
 Bounds
  0 <= x <= 10
  0 <= y <= 10
@@ -43,11 +45,16 @@ End
 
             # Check constraints were created
             assert len(model.constraints) > 0
+            
+			# Check if objective was created
+            assert model.objective is not None
 
             # Try solving the loaded model
             solver.load_model(model)
             status = solver.solve()
             assert status == SolutionStatus.OPTIMAL
+            assert_objective_close(solver, 10.0)
+            assert_solution_close(solver,  {"x": 10.0, "y": 0.0})
 
         finally:
             os.unlink(filename)
