@@ -7,6 +7,7 @@ import time
 from core.model import Model
 from core.base import Variable, Constraint, Objective, VariableType, ConstraintType, SolutionStatus
 from solvers.highs import HighsSolver, HighsStatus, HighsModelStatus, kHighsInf
+from tests.conftest import assert_objective_close, assert_solution_close
 
 
 class TestIncrementalUpdates:
@@ -49,8 +50,12 @@ class TestIncrementalUpdates:
         """Adding a constraint should use incremental update"""
         model = Model(name="test")
         x = Variable(name="x", var_type=VariableType.CONTINUOUS, lower_bound=0.0, upper_bound=10.0)
+        y = Variable(name="y", var_type=VariableType.CONTINUOUS, lower_bound=0.0, upper_bound=10.0)
+        z = Variable(name="z", var_type=VariableType.CONTINUOUS, lower_bound=0.0, upper_bound=10.0)
         model.add_variable(x)
-        model.objective = Objective(coefficients={"x": 1.0}, is_minimize=True)
+        model.add_variable(y)
+        model.add_variable(z)
+        model.objective = Objective(coefficients={"x": 1.0, "y": -1.0, "z": 1.0}, is_minimize=True)
 
         solver = HighsSolver()
         solver.load_model(model)
@@ -58,20 +63,76 @@ class TestIncrementalUpdates:
         assert status == SolutionStatus.OPTIMAL
         solution = solver.get_solution()
         assert abs(solution["x"] - 0.0) < 1e-6  # x should be 0 (minimizing)
-
+        assert abs(solution["y"] - 10.0) < 1e-6  # y should be 0 (minimizing)
+        assert abs(solution["z"] - 0.0) < 1e-6  # z should be 0 (minimizing)
+        
         # Add constraint x >= 5
         solver.add_constraint(Constraint(
             name="c1", coefficients={"x": 1.0}, constraint_type=ConstraintType.GEQ, rhs=5.0
         ))
-
         # Solve again
         status = solver.solve()
         assert status == SolutionStatus.OPTIMAL
         solution = solver.get_solution()
         assert abs(solution["x"] - 5.0) < 1e-6  # x should now be 5
+        assert abs(solution["y"] - 10.0) < 1e-6  # y should still be 10
+        assert abs(solution["z"] - 0.0) < 1e-6  # z should still be 0
+        
+        # Add constraint y <= 3
+        solver.add_constraint(Constraint(
+            name="c2", coefficients={"y": 1.0}, constraint_type=ConstraintType.LEQ, rhs=3.0
+        ))
+        # Solve again
+        status = solver.solve()
+        assert status == SolutionStatus.OPTIMAL
+        solution = solver.get_solution()
+        assert abs(solution["x"] - 5.0) < 1e-6  # x should now be 5
+        assert abs(solution["y"] - 3.0) < 1e-6  # y should now be 3
+        assert abs(solution["z"] - 0.0) < 1e-6  # z should still be 0
+        
+        # Add constraint z = 7
+        solver.add_constraint(Constraint(
+            name="c3", coefficients={"z": 1.0}, constraint_type=ConstraintType.EQ, rhs=7.0
+        ))
+        # Solve again
+        status = solver.solve()
+        assert status == SolutionStatus.OPTIMAL
+        solution = solver.get_solution()
+        assert abs(solution["x"] - 5.0) < 1e-6  # x should now be 5
+        assert abs(solution["y"] - 3.0) < 1e-6  # y should now be 3
+        assert abs(solution["z"] - 7.0) < 1e-6  # z should now be 7
 
         # Check constraint was added to index
         assert "c1" in solver.constraint_indices
+        assert "c2" in solver.constraint_indices
+        assert "c3" in solver.constraint_indices
+        
+        solver.set_constraint_active("c3", False)
+        # Add constraint 0y + z = 8
+        solver.add_constraint(Constraint(
+            name="c4", coefficients={"y": 0.0, "z": 1.0}, constraint_type=ConstraintType.EQ, rhs=8.0
+        ))
+        # Solve again
+        status = solver.solve()
+        assert status == SolutionStatus.OPTIMAL
+        solution = solver.get_solution()
+        assert abs(solution["x"] - 5.0) < 1e-6  # x should now be 5
+        assert abs(solution["y"] - 3.0) < 1e-6  # y should now be 3
+        assert abs(solution["z"] - 8.0) < 1e-6  # z should now be 8
+        assert "c4" in solver.constraint_indices
+
+    def test_add_constraint_incremental_without_passing_names(self, simple_model: Model):
+        solver = HighsSolver()
+        solver.pass_object_names_to_solver = False
+        solver.load_model(simple_model)
+        solver.add_constraint(Constraint(
+            name="c1", coefficients={"x": 1.0}, constraint_type=ConstraintType.GEQ, rhs=5.0
+        ))
+        solver.solve()
+        assert "c1" in solver.constraint_indices
+        assert_solution_close(solver, {"x": 5.0})
+        assert_objective_close(solver, 5.0)
+
         
     def test_add_constraint_incremental_via_updated_model_and_not_synced(self):
         """Adding a constraint should use incremental update"""
@@ -177,8 +238,7 @@ class TestIncrementalUpdates:
         status = solver.solve()
         solution = solver.get_solution()
         assert abs(solution["x"] - 5.0) < 1e-6
-
-		# Check bounds before deactivating
+        # Check bounds before deactivating
         status, row_id = solver.highs.getRowByName("c1")
         assert status == HighsStatus.kOk, "Failed to get row by name"
         status, lb, ub, nnz = solver.highs.getRow(row_id)
@@ -208,6 +268,9 @@ class TestIncrementalUpdates:
         model.add_constraint(Constraint(
             name="c1", coefficients={"x": 1.0}, constraint_type=ConstraintType.GEQ, rhs=5.0
         ))
+        model.add_constraint(Constraint(
+            name="c2", coefficients={"x": 1.0}, constraint_type=ConstraintType.EQ, rhs=8.0
+        ))
 
         solver = HighsSolver()
         solver.load_model(model)
@@ -228,10 +291,19 @@ class TestIncrementalUpdates:
         assert status == HighsStatus.kOk, "Failed to get row after reactivating"
         assert lb == 5.0 and ub == kHighsInf
 
+        # Deactivate c2
+        solver.set_constraint_active("c2", False)
+
         # Solve
         status = solver.solve()
         solution = solver.get_solution()
-        assert abs(solution["x"] - 5.0) < 1e-6  # x should be 5 again
+        assert abs(solution["x"] - 5.0) < 1e-6  # x should be 5 
+        
+        # Activate c2 and solve
+        solver.set_constraint_active("c2", True)
+        status = solver.solve()
+        solution = solver.get_solution()
+        assert abs(solution["x"] - 8.0) < 1e-6  # x should be 8 now
 
     def test_multiple_constraint_toggles(self):
         """Test toggling constraints multiple times"""
