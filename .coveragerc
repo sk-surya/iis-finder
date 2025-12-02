@@ -2,4 +2,5 @@
 exclude_lines =
     @abstractmethod
     @abc.abstractmethod
+	pragma: no cover
 	if TYPE_CHECKING:
