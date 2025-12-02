@@ -1,0 +1,3 @@
+# need this file (even if empty) for GitHub to generate coverage reports during Pull Requests
+ignore:
+  - "*/tests/*”
