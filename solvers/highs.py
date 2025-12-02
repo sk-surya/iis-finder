@@ -474,13 +474,18 @@ class HighsSolver(SolverInterface):
 		model = Model(name=filename.split('/')[-1].split('.')[0])
 
 		# Create variables
-		for i in range(lp.num_col_):
-			var_type = VariableType.CONTINUOUS
-			if hasattr(lp, 'integrality_') and lp.integrality_:
-				if lp.integrality_[i] == highspy.HighsVarType.kInteger:
-					var_type = VariableType.INTEGER
+		is_mip = hasattr(lp, 'integrality_') and lp.integrality_ is not None and len(lp.integrality_) > 0
+		if is_mip:
+			var_types = [VariableType.INTEGER] * lp.num_col_
+			for i in range(lp.num_col_):
+				if lp.integrality_[i] == highspy.HighsVarType.kContinuous:
+					var_types[i] = VariableType.CONTINUOUS
+				elif lp.integrality_[i] == highspy.HighsVarType.kInteger:
 					if lp.col_lower_[i] == 0.0 and lp.col_upper_[i] == 1.0:
-						var_type = VariableType.BINARY
+						var_types[i] = VariableType.BINARY
+				else:	# pragma: no cover
+					raise NotImplementedError(f"Unsupported variable integrality type - {lp.integrality_[i]}")
+
 			var = Variable(
 				name=f"x{i}",
 				var_type=var_type,
