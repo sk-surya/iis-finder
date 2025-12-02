@@ -79,8 +79,7 @@ class HighsSolver(SolverInterface):
 		obj_coeffs = np.zeros(num_vars)
 		if model.objective:
 			for var_name, coef in model.objective.coefficients.items():
-				if var_name in self.var_indices:
-					obj_coeffs[self.var_indices[var_name]] = coef
+				obj_coeffs[self.var_indices[var_name]] = coef
 
 		# Set up constraints
 		active_constraints = model.get_active_constraints()
