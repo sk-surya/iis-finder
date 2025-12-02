@@ -1,6 +1,10 @@
 {
 	"python.testing.pytestArgs": [
-		"tests"
+		"tests/",
+		"--cov=.",
+		"--cov-branch",
+		"--cov-report=xml",
+		"--cov-report=term-missing"
 	],
 	"python.testing.unittestEnabled": false,
 	"python.testing.pytestEnabled": true
